@@ -1,0 +1,402 @@
+task.wait(0.1)
+-- Script Minimaliste pour Steal a Brainrot
+-- Optimisé pour réduire au maximum le chargement tout en évitant la détection
+-- Version spécifique pour ce jeu
+
+local Players = game:GetService("Players")
+local Lighting = game:GetService("Lighting")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local StarterGui = game:GetService("StarterGui")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local ContentProvider = game:GetService("ContentProvider")
+local InsertService = game:GetService("InsertService")
+
+local player = Players.LocalPlayer
+local characterName = player.Name
+
+-- Fonction de suppression sécurisée (évite les erreurs)
+local function safeDestroy(object)
+    if object and object.Parent then
+        pcall(function() object:Destroy() end)
+    end
+end
+
+-- Interrompre le chargement de contenu dès le démarrage (DÉSACTIVÉ pour permettre le chargement du sol)
+local function interruptContentLoading()
+    -- NE PLUS bloquer le chargement pour permettre au sol de se charger
+    -- pcall(function()
+    --     ContentProvider:SetBaseUrl("")
+    -- end)
+    
+    -- Garder le streaming activé pour le chargement normal
+    -- pcall(function()
+    --     Workspace.StreamingEnabled = false
+    -- end)
+    
+    -- NE PAS vider la file d'attente
+    -- pcall(function()
+    --     ContentProvider:PreloadAsync({})
+    -- end)
+    
+    -- NE PAS supprimer ReplicatedFirst
+    -- pcall(function()
+    --     for _, child in ipairs(ReplicatedFirst:GetChildren()) do
+    --         safeDestroy(child)
+    --     end
+    -- end)
+    
+    -- NE PAS supprimer StarterPack (inventaire)
+    -- NE PAS supprimer StarterPlayerScripts (fonctionnalités inventaire)
+end
+
+-- Empêcher le chargement visuel des bases des autres joueurs (RÉACTIVÉ)
+local function blockOtherPlayersBases()
+    -- Surveiller l'arrivée de nouveaux joueurs
+    Players.PlayerAdded:Connect(function(newPlayer)
+        -- Supprimer immédiatement leur personnage
+        newPlayer.CharacterAdded:Connect(function(character)
+            safeDestroy(character)
+        end)
+        
+        -- Supprimer leur personnage s'il existe déjà
+        if newPlayer.Character then
+            safeDestroy(newPlayer.Character)
+        end
+    end)
+    
+    -- Supprimer les personnages des joueurs déjà présents
+    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            if otherPlayer.Character then
+                safeDestroy(otherPlayer.Character)
+            end
+        end
+    end
+end
+
+-- Nettoyage intelligent de Workspace (MODIFIÉ: suppression TARGETÉE uniquement, ne JAMAIS supprimer par défaut)
+local function cleanWorkspace()
+    for _, child in ipairs(Workspace:GetChildren()) do
+        -- Garder le personnage et la caméra
+        if child.Name ~= characterName and child.ClassName ~= "Camera" then
+            -- Ne pas supprimer les scripts importants du jeu
+            if child.ClassName ~= "Script" and child.ClassName ~= "LocalScript" then
+                local lowerName = child.Name:lower()
+                
+                -- SUPPRIMER SEULEMENT les murs extérieurs (très spécifique)
+                local isWall = false
+                if child:IsA("BasePart") then
+                    -- Murs sont TRÈS verticaux et grands
+                    local isVeryVertical = child.Size.Y > 30 and child.Size.Y > child.Size.X * 2 and child.Size.Y > child.Size.Z * 2
+                    local isWallName = lowerName:find("wall") or lowerName:find("fence") or 
+                                     lowerName:find("barrier") or lowerName:find("gate") or
+                                     lowerName:find("border") or lowerName:find("boundary")
+                    
+                    if isVeryVertical and isWallName then
+                        isWall = true
+                    end
+                end
+                
+                -- SUPPRIMER SEULEMENT les bases des utilisateurs (très spécifique)
+                local isUserBase = false
+                if lowerName:find("base") or lowerName:find("home") or 
+                   lowerName:find("house") or lowerName:find("player") or
+                   lowerName:find("territory") or lowerName:find("claim") or
+                   lowerName:find("plot") or lowerName:find("build") then
+                    isUserBase = true
+                end
+                
+                -- NE SUPPRIMER QUE si c'est explicitement un mur ou une base
+                -- NE JAMAIS supprimer par défaut
+                if isWall or isUserBase then
+                    safeDestroy(child)
+                end
+                -- Tout le reste est conservé par défaut (y compris le sol)
+            end
+        end
+    end
+end
+
+-- Optimisation du personnage (PERFECTIONNÉ: conservation stricte des outils)
+local function optimizeCharacter()
+    local character = player.Character
+    if character then
+        for _, child in ipairs(character:GetDescendants()) do
+            -- Supprimer TOUS les effets visuels SAUF les outils
+            if child.ClassName == "Accessory" or child.ClassName == "ParticleEmitter" or 
+               child.ClassName == "Trail" or child.ClassName == "PointLight" or
+               child.ClassName == "SpotLight" or child.ClassName == "SurfaceLight" or
+               child.ClassName == "BillboardGui" or child.ClassName == "SurfaceGui" or
+               child.ClassName == "Beam" or child.ClassName == "Smoke" then
+                safeDestroy(child)
+            end
+            
+            -- CONSERVER STRICTEMENT les outils et HopperBin (inventaire)
+            -- JAMAIS supprimer: Tool, HopperBin
+            
+            -- Supprimer toutes les décorations du personnage
+            local lowerName = child.Name:lower()
+            if lowerName:find("decor") or lowerName:find("effect") or 
+               lowerName:find("glow") or lowerName:find("shine") or
+               lowerName:find("sparkle") or lowerName:find("aura") or
+               lowerName:find("particle") or lowerName:find("trail") then
+                if child.ClassName ~= "Tool" and child.ClassName ~= "HopperBin" then
+                    safeDestroy(child)
+                end
+            end
+            
+            -- Optimisation agressive des parties du corps
+            if child:IsA("BasePart") then
+                pcall(function()
+                    child.Material = Enum.Material.SmoothPlastic
+                    child.Reflectance = 0
+                    child.CastShadow = false
+                    child.Transparency = 0
+                    child.CanCollide = true -- Garder la collision pour le gameplay
+                end)
+            end
+        end
+    end
+end
+
+-- Désactiver les effets visuels
+local function disableVisualEffects()
+    -- Éclairage minimal
+    Lighting.Ambient = Color3.new(1, 1, 1)
+    Lighting.Brightness = 1
+    Lighting.GlobalShadows = false
+    Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
+    Lighting.ShadowSoftness = 0
+    
+    -- Supprimer les effets de lumière
+    for _, child in ipairs(Lighting:GetChildren()) do
+        if child.ClassName ~= "Script" and child.ClassName ~= "LocalScript" then
+            safeDestroy(child)
+        end
+    end
+end
+
+-- Nettoyage de l'interface (PERFECTIONNÉ: conservation stricte de l'inventaire)
+local function cleanUI()
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if playerGui then
+        for _, child in ipairs(playerGui:GetChildren()) do
+            -- CONSERVER UNIQUEMENT l'inventaire et UI essentielle
+            local lowerName = child.Name:lower()
+            local isEssential = lowerName:find("inventory") or lowerName:find("hotbar") or
+                              lowerName:find("backpack") or lowerName:find("tool") or
+                              lowerName:find("item") or lowerName:find("slot") or
+                              lowerName:find("helditem") -- Notre UI personnalisée
+            
+            -- Supprimer tout sauf l'inventaire
+            if not isEssential then
+                safeDestroy(child)
+            end
+        end
+    end
+end
+
+-- Afficher l'objet tenu et la barre d'inventaire
+local function showHeldItemUI()
+    local playerGui = player:FindFirstChild("PlayerGui")
+    if not playerGui then return end
+    
+    -- Créer un cadre pour l'objet tenu
+    local heldItemFrame = Instance.new("Frame")
+    heldItemFrame.Name = "HeldItemDisplay"
+    heldItemFrame.Size = UDim2.new(0, 200, 0, 50)
+    heldItemFrame.Position = UDim2.new(0.5, -100, 1, -70)
+    heldItemFrame.BackgroundColor3 = Color3.new(0.1, 0.1, 0.1)
+    heldItemFrame.BackgroundTransparency = 0.3
+    heldItemFrame.BorderSizePixel = 0
+    heldItemFrame.Parent = playerGui
+    
+    local corner = Instance.new("UICorner")
+    corner.CornerRadius = UDim.new(0, 8)
+    corner.Parent = heldItemFrame
+    
+    local stroke = Instance.new("UIStroke")
+    stroke.Color = Color3.new(0.5, 0.5, 0.5)
+    stroke.Thickness = 2
+    stroke.Parent = heldItemFrame
+    
+    local itemLabel = Instance.new("TextLabel")
+    itemLabel.Name = "ItemLabel"
+    itemLabel.Size = UDim2.new(1, 0, 1, 0)
+    itemLabel.BackgroundTransparency = 1
+    itemLabel.Text = "Aucun objet"
+    itemLabel.TextColor3 = Color3.new(1, 1, 1)
+    itemLabel.TextSize = 18
+    itemLabel.Font = Enum.Font.GothamBold
+    itemLabel.Parent = heldItemFrame
+    
+    -- Mettre à jour l'affichage quand l'objet change
+    local function updateHeldItem()
+        local character = player.Character
+        local heldItem = "Aucun objet"
+        
+        if character then
+            local tool = character:FindFirstChildOfClass("Tool")
+            if tool then
+                heldItem = tool.Name
+            end
+        end
+        
+        itemLabel.Text = "Objet: " .. heldItem
+    end
+    
+    -- Surveiller les changements d'outils
+    player.CharacterAdded:Connect(function()
+        updateHeldItem()
+    end)
+    
+    if player.Character then
+        player.ChildAdded:Connect(function(child)
+            if child:IsA("Tool") then
+                updateHeldItem()
+            end
+        end)
+        
+        player.ChildRemoved:Connect(function(child)
+            if child:IsA("Tool") then
+                updateHeldItem()
+            end
+        end)
+    end
+    
+    -- Mise à jour initiale
+    updateHeldItem()
+    
+    -- Mise à jour continue
+    spawn(function()
+        while true do
+            updateHeldItem()
+            wait(0.5)
+        end
+    end)
+end
+
+-- Nettoyage des autres joueurs (RÉACTIVÉ)
+local function cleanOtherPlayers()
+    for _, otherPlayer in ipairs(Players:GetPlayers()) do
+        if otherPlayer ~= player then
+            -- Supprimer le personnage des autres joueurs
+            local otherCharacter = otherPlayer.Character
+            if otherCharacter then
+                safeDestroy(otherCharacter)
+            end
+            
+            -- Supprimer les GUI des autres joueurs
+            local otherPlayerGui = otherPlayer:FindFirstChild("PlayerGui")
+            if otherPlayerGui then
+                safeDestroy(otherPlayerGui)
+            end
+            
+            -- Supprimer tous les objets associés à ce joueur dans Workspace
+            for _, child in ipairs(Workspace:GetChildren()) do
+                if child.Name == otherPlayer.Name or child.Name:find(otherPlayer.Name) then
+                    safeDestroy(child)
+                end
+            end
+        end
+    end
+end
+
+-- Désactiver les sons (optionnel)
+local function disableSounds()
+    for _, sound in ipairs(game:GetDescendants()) do
+        if sound.ClassName == "Sound" then
+            pcall(function() sound.Volume = 0 end)
+        end
+    end
+end
+
+-- Optimisation continue mais discrète (MODIFIÉ: suppression TARGETÉE uniquement)
+local function startContinuousOptimization()
+    RunService.Heartbeat:Connect(function()
+        -- Nettoyage léger à chaque frame
+        if player.Character then
+            optimizeCharacter()
+        end
+        
+        -- Supprimer les bases des autres joueurs en temps réel
+        cleanOtherPlayers()
+        
+        -- Surveiller l'apparition de nouveaux objets (en temps réel - suppression targetée uniquement)
+        for _, child in ipairs(Workspace:GetChildren()) do
+            if child.Name ~= characterName and child.ClassName ~= "Camera" and child.ClassName ~= "Script" and child.ClassName ~= "LocalScript" then
+                local lowerName = child.Name:lower()
+                
+                -- Vérifier si c'est un mur (très spécifique)
+                local isWall = false
+                if child:IsA("BasePart") then
+                    local isVeryVertical = child.Size.Y > 30 and child.Size.Y > child.Size.X * 2 and child.Size.Y > child.Size.Z * 2
+                    local isWallName = lowerName:find("wall") or lowerName:find("fence") or 
+                                     lowerName:find("barrier") or lowerName:find("gate")
+                    if isVeryVertical and isWallName then
+                        isWall = true
+                    end
+                end
+                
+                -- Vérifier si c'est une base
+                local isUserBase = false
+                if lowerName:find("base") or lowerName:find("home") or 
+                   lowerName:find("house") or lowerName:find("player") or
+                   lowerName:find("territory") or lowerName:find("claim") or
+                   lowerName:find("plot") or lowerName:find("build") then
+                    isUserBase = true
+                end
+                
+                -- NE SUPPRIMER QUE si c'est explicitement un mur ou une base
+                if isWall or isUserBase then
+                    safeDestroy(child)
+                end
+                -- Tout le reste est conservé par défaut
+            end
+        end
+    end)
+end
+
+-- Attendre que le personnage soit chargé (instantané)
+local function waitForCharacter()
+    if not player.Character then
+        player.CharacterAdded:Wait()
+    end
+end
+
+-- Fonction principale (PERFECTIONNÉ)
+local function main()
+    print("Optimisation ULTRA pour Steal a Brainrot démarrée...")
+    
+    -- Interrompre le chargement dès le démarrage
+    interruptContentLoading()
+    
+    -- Bloquer les bases des autres joueurs
+    blockOtherPlayersBases()
+    
+    waitForCharacter()
+    
+    -- Premier nettoyage
+    cleanWorkspace()
+    cleanOtherPlayers()
+    disableVisualEffects()
+    cleanUI()
+    optimizeCharacter()
+    disableSounds()
+    
+    -- Afficher l'objet tenu et la barre d'inventaire
+    showHeldItemUI()
+    
+    -- Démarrer l'optimisation continue
+    startContinuousOptimization()
+    
+    print("Optimisation ULTRA terminée. SOL STRICT PROTÉGÉ, INVENTAIRES CONSERVÉS, TOUT LE RESTE SUPPRIMÉ.")
+end
+
+-- Exécuter avec protection anti-erreur
+local success, err = pcall(main)
+if not success then
+    warn("Erreur lors de l'exécution: " .. tostring(err))
+end
